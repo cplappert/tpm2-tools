@@ -18,6 +18,10 @@ file_hmac_key_handle=key.handle
 
 file_input_data=secret.data
 
+raw_hmac_key=raw_hmac.key
+tpm_hmac=tpm.hmac
+ossl_hmac=ossl.hmac
+
 cleanup() {
   rm -f $file_primary_key_ctx $file_hmac_key_pub $file_hmac_key_priv \
         $file_hmac_key_name $file_hmac_output ticket.out
@@ -92,6 +96,31 @@ test -f ticket.out
 
 # test no output file
 cat $file_input_data | tpm2 hmac -c $file_hmac_key_ctx 1>/dev/null
+
+# test with user defined hmac key
+cleanup "no-shut-down"
+
+echo -n "exemplary_hmac_key" > $raw_hmac_key
+echo -n "exemplary_test_data" > $file_input_data
+
+tpm2 createprimary -Q -C e -g $alg_primary_obj -G $alg_primary_key \
+-c $file_primary_key_ctx
+
+tpm2 create -Q -G $alg_create_key -u $file_hmac_key_pub -r $file_hmac_key_priv \
+-C $file_primary_key_ctx -i $raw_hmac_key
+
+tpm2 load -Q -C $file_primary_key_ctx -u $file_hmac_key_pub \
+-r $file_hmac_key_priv -n $file_hmac_key_name -c $file_hmac_key_ctx
+
+tpm2 hmac -c $file_hmac_key_ctx --hex $file_input_data -o $tpm_hmac
+
+openssl dgst -binary -sha256 -hmac "$(cat $raw_hmac_key)" $file_input_data | \
+  xxd -p -c 256 | tr -d '\n' > $ossl_hmac
+
+if ! cmp -s $ossl_hmac $tpm_hmac; then
+   echo "HMAC differs"
+   exit 1
+fi
 
 # verify that silent is indeed silent
 stdout=`cat $file_input_data | tpm2 hmac -Q -c $file_hmac_key_ctx`

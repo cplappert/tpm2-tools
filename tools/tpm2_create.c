@@ -178,6 +178,16 @@ static void setup_attributes(TPMA_OBJECT *attrs) {
         *attrs &= ~TPMA_OBJECT_SENSITIVEDATAORIGIN;
     }
 
+    if (ctx.object.is_sealing_input_specified && ctx.object.is_object_alg_specified &&
+        !strncmp("hmac", ctx.object.alg, 4)) {
+        *attrs &= ~TPMA_OBJECT_DECRYPT;
+        *attrs |= TPMA_OBJECT_SIGN_ENCRYPT;
+        *attrs &= ~TPMA_OBJECT_FIXEDTPM;
+        *attrs &= ~TPMA_OBJECT_FIXEDPARENT;
+        *attrs &= ~TPMA_OBJECT_SENSITIVEDATAORIGIN;
+        *attrs |= TPMA_OBJECT_USERWITHAUTH;
+    }
+
     if (!ctx.object.is_sealing_input_specified && !ctx.object.attrs &&
         !strncmp("hmac", ctx.object.alg, 4)) {
         *attrs &= ~TPMA_OBJECT_DECRYPT;
@@ -427,8 +437,9 @@ static tool_rc check_options(void) {
         return tool_rc_option_error;
     }
 
-    if (ctx.object.is_sealing_input_specified && ctx.object.is_object_alg_specified) {
-        LOG_ERR("Cannot specify -G and -i together.");
+    if (ctx.object.is_sealing_input_specified && ctx.object.is_object_alg_specified &&
+        strncmp("hmac", ctx.object.alg, 4)) {
+        LOG_ERR("Cannot specify -G with and -i together if -G is not \"hmac\".");
         return tool_rc_option_error;
     }
 
@@ -479,7 +490,12 @@ static bool on_option(char key, char *value) {
         break;
     case 'i':
         ctx.object.sealed_data = strcmp("-", value) ? value : NULL;
-        ctx.object.alg = "keyedhash";
+        if (ctx.object.is_object_alg_specified && !strncmp("hmac", ctx.object.alg, 4)){
+            LOG_INFO("Input data is not used for sealing but as hmac key.");
+        }
+        else {
+            ctx.object.alg = "keyedhash";
+        }
         ctx.object.is_sealing_input_specified = true;
         bool res = load_sensitive();
         if (!res) {
